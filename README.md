@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/239786374.svg)](https://zenodo.org/badge/latestdoi/239786374)
+
 # Fostering Responsible Research Practices
 
 ## Project data
