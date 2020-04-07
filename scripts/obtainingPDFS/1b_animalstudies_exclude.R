@@ -1,4 +1,4 @@
-#!/home1/wim/R-3.2.3/bin/Rscript --no-save --no-restore
+#!/usr/bin/env Rscript
 #
 # contact: w.m.otte@umcutrecht.nl
 # date: 01-04-2017

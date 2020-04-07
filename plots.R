@@ -1,6 +1,9 @@
 #!/usr/bin/env Rscript
 #
+# facet plots 
+#
 # w.m.otte@umcutrecht.nl
+#
 #########################
 
 library( 'ggplot2' )
@@ -11,6 +14,23 @@ library( "cowplot" )
 ###################################################
 # FUNCTIONS
 ###################################################
+
+
+
+# manual colors (red, blue)
+manual.colors <- c( "#f4a582", "#92c5de", "#0571b0", "#ca0020", "gray40" )
+manual.colors.two <- c( "#0571b0", "#ca0020" )
+
+###
+std <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
+}
+
+###
+# ggplot style function.
+##
+number_ticks <- function( n ) { function( limits ) pretty( limits, n ) }
 
 ###
 # Get proportional CI
@@ -29,9 +49,6 @@ get.prop.ci <- function( k, n, lower = TRUE )
 		return( p$conf.int[ 2 ] )
 	}
 }
-
-number_ticks <- function( n ) { function( limits ) pretty( limits, n ) }
-errs <- function(x, na.rm=FALSE) { if (na.rm) x <- na.omit(x); sqrt(var(x)/length(x)) }
 
 ###
 # Plot cont.
@@ -54,8 +71,8 @@ plot.facet <- function( type = 'cont', df.cont, var2, label2, var1, label1, outd
 	{
 		# get means and 95% confidence interval - with linear regression
 		ds <- ddply( df, .( x, group ), summarise, mean = 100 * mean( y, na.rm = T ), 
-												lower = 100 * ( mean( y, na.rm = T ) - 1.96 * errs( y, na.rm = T ) ), 
-												upper = 100 * ( mean( y, na.rm = T ) + 1.96 * errs( y, na.rm = T ) ) )
+												lower = 100 * ( mean( y, na.rm = T ) - 1.96 * std( y, na.rm = T ) ), 
+												upper = 100 * ( mean( y, na.rm = T ) + 1.96 * std( y, na.rm = T ) ) )
 	} else {
 		# percentage and 95% CI
 		ds <- ddply( df, .( x, group ), summarise, 
@@ -105,6 +122,7 @@ plot_n_pub <- function( df.cont, var = 'number_of_trials', ylabel = 'Trials', ou
 
 	p <- ggplot( ds, aes( x = x, y = mean ) ) +
 	  		geom_bar( stat = "identity", colour = 'gray20', position = position_dodge(), fill = fillcolour ) +
+			#geom_errorbar( aes( ymin = lower, ymax = upper ), width = 0.2, position = position_dodge( 0.9 ) ) +
 			scale_y_continuous( breaks = number_ticks( 8 ), limits = c( 0, 95000 ) ) +
 		   	ylab( paste0( ylabel, "" ) ) +
 			xlab( xlabel ) +
@@ -112,11 +130,23 @@ plot_n_pub <- function( df.cont, var = 'number_of_trials', ylabel = 'Trials', ou
 			theme( legend.position = 'none', axis.title = element_text( face = "bold" ), axis.text.x = element_text( angle = 45, hjust = 1 ) )
 
 	# write to file
-	ggsave( p, file = paste( outdir, '/', gsub( '%', '_perc_', gsub( ' ', '_', ylabel ) ), '.png', sep = '' ), dpi = 200, width = 4, height = 7 )
+	ggsave( p, file = paste( outdir, '/', gsub( '%', '_perc_', gsub( ' ', '_', ylabel ) ), '.png', sep = '' ), dpi = 200, width = 4, height = 8 )
 
 	# write corresponding number to csv
 	write.csv( ds, file = paste( outdir, '/', gsub( '%', '_perc_', gsub( ' ', '_', ylabel ) ), '.csv', sep = '' ) )
 
+	# relative increase on yearly basis
+	#          x  mean
+	#1     <1990  6066
+	#2 1990-1995  6272
+	#3 1995-2000  9878
+	#4 2000-2005 24296
+	#5 2005-2010 40735
+	#6 2010-2018 89373
+	#> ( 89373 / 8 ) / ( 6272 / 6 )
+	#[1] 10.68714
+
+	#1,068.7% increase in number of yearly publications (1990-1995 compared to 2010-2018)
 	return( p )
 }
 
@@ -136,7 +166,7 @@ plot.cont <- function( df.cont, var, ylabel = 'Y', outdir, fillcolour = '#3690c0
 	df$y <- df.cont[, var ]
 
 	# get means and 95% confidence interval - with linear regression
-	ds <- ddply( df, .( x ), summarise, mean = mean( y, na.rm = T ), lower = mean( y, na.rm = T ) - 1.96 * errs( y, na.rm = T ), upper = mean( y, na.rm = T ) + 1.96 * errs( y, na.rm = T ) )
+	ds <- ddply( df, .( x ), summarise, mean = mean( y, na.rm = T ), lower = mean( y, na.rm = T ) - 1.96 * std( y, na.rm = T ), upper = mean( y, na.rm = T ) + 1.96 * std( y, na.rm = T ) )
 	levels( ds$x ) <- c( '<1990', '1990-1995', '1995-2000', '2000-2005', '2005-2010', '2010-2018' )
 
 	p <- ggplot( ds, aes( x = x, y = mean, ymin = lower, ymax = upper ) ) +
@@ -154,12 +184,33 @@ plot.cont <- function( df.cont, var, ylabel = 'Y', outdir, fillcolour = '#3690c0
 	}
 
 	# write to file
-	ggsave( p, file = paste( outdir, '/', var, '.png', sep = '' ), dpi = 200, width = 4, height = 7 )
+	ggsave( p, file = paste( outdir, '/', gsub( '%', '_perc_', gsub( ' ', '_', ylabel ) ), '.png', sep = '' ), dpi = 200, width = 4, height = 7 )
 
 	# write corresponding number to csv
-	write.csv( ds, file = paste( outdir, '/', var, '.csv', sep = '' ) )
+	write.csv( ds, file = paste( outdir, '/', gsub( '%', '_perc_', gsub( ' ', '_', ylabel ) ), '.csv', sep = '' ) )
 
 	return( p )
+}
+
+###
+# Create stacked neg/pos rates
+##
+get_prepared_neg_pos <- function( all )
+{
+	# merge pos/neg words
+	df <- all[ , colnames( all ) %in% c( "year_group", "neg.rate", "pos.rate" ) ]
+
+	# wide to long
+	df_long <- reshape2::melt( df, id = c( "year_group" ) ) 
+
+	# get means and 95% confidence interval - with linear regression
+	ds <- ddply( df_long, .( year_group, variable ), summarise, mean = 100 * sum( value, na.rm = TRUE ) / length( value ) )
+	levels( ds$variable ) <- c( 'negative', 'positive' )
+	ds$year_group <- as.factor( ds$year_group )
+	ds$variable <- factor( ds$variable, levels = rev( levels( ds$variable ) ) )
+
+	levels( ds$year_group ) <- c( '<1990', '1990-1995', '1995-2000', '2000-2005', '2005-2010', '2010-2018' )
+	return( ds )
 }
 
 
@@ -169,45 +220,63 @@ plot.cont <- function( df.cont, var, ylabel = 'Y', outdir, fillcolour = '#3690c0
 
 
 # make output directory
-outdir <- 'out.plots'
+outdir <- 'out.plot.facets'
 dir.create( outdir, showWarnings = FALSE )
 
-# input file
+# read prepared data
 infile <- 'data/data.csv'  
 
-# read data
+# get data
 all <- read.csv( infile, row.names = 1 )
 
-# add helper column
-all$all <- as.factor( 'all' )
+# add helper variable
+all$all <- as.factor( 'jif' )
 
 # convert prob to percentage
 all$gender_propFem <- all$gender_propFem * 100
+
+
 
 ###########################
 # I. Figure 2
 ###########################
 
-p1 <- plot_n_pub( all, 'trials', 'Trials', outdir )
+
+p1 <- plot_n_pub( all, 'trials', 'Trials (×1000)', outdir )
 p2 <- plot.cont( all, "nAuthors", 'Authors', outdir )
 p3 <- plot.cont( all, "gender_propFem", 'Proportion female', outdir )
-p4 <- plot.cont( all, "h.last", 'H-index (last)', outdir )
+# new
+p4a <- plot.cont( all, "h.first", 'H-index (first)', outdir )
+p4b <- plot.cont( all, "h.last", 'H-index (last)', outdir )
 p5 <- plot.cont( all, "ncountries", 'Countries', outdir )
 p6 <- plot.cont( all, "ninstitution", 'Institutions', outdir )
-p7 <- plot.cont( all, "neg.rate", 'Negative words', outdir, limits = c( 0, 0.06 ) )
-p8 <- plot.cont( all, "pos.rate", 'Positive words', outdir, limits = c( 0, 0.06 ) )
 
+# neg.rate + pos.rate in single figure
+ds_neg_pos <- get_prepared_neg_pos( all )
+
+# Stacked bias for medical disciplines"#f4a582", 
+p7_8 <- ggplot( data = ds_neg_pos, aes( x = year_group, y = mean, group = variable, fill = variable ) ) + 
+		geom_col( colour = 'gray20' ) +
+		scale_y_continuous( breaks = number_ticks( 12 ) ) +
+		scale_fill_manual( values = c( "#3690c0", "#92c5de" ) ) + #, "#0571b0", '#E69F00', '#d95f0e' ) ) +
+		ylab( "Frequency (%)" ) +
+		xlab( "Time" ) +
+		theme_classic( base_size = 12 ) +
+		geom_text( aes( label = round( mean, 1 ) ), size = 4, position = position_stack( vjust = 0.5 ) ) + 
+		theme( legend.position = 'none', axis.title = element_text( face = "bold" ), axis.text.x = element_text( angle = 45, hjust = 1 ) ) +
+		theme( axis.text.y = element_blank(), axis.ticks.y = element_blank() )
 
 # arrange the three plots in a single row
 p <- plot_grid(
-	p1 + theme( legend.position = "none", axis.title = element_blank() ),
-	p2 + theme( legend.position = "none", axis.title = element_blank() ),
-	p3 + theme( legend.position = "none", axis.title = element_blank() ),
-	p4 + theme( legend.position = "none", axis.title = element_blank() ),
-	p5 + theme( legend.position = "none", axis.title = element_blank() ),
-	p6 + theme( legend.position = "none", axis.title = element_blank() ),
-	p7 + theme( legend.position = "none", axis.title = element_blank() ),
-	p8 + theme( legend.position = "none", axis.title = element_blank() ),
+	p1 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  Number of trials", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p2 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  Number of authors", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p3 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  Percentage female", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p4a + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  H-index (first)", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p4b + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  H-index (last)", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p5 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  Countries", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p6 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  Institutions", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	p7_8 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = "  Word frequencies", hjust = 0, vjust = 1, size = 5, fontface = 2, colour = 'gray40' ),
+	
 	align = 'vh',
 	labels = c( "A", "B", "C", "D", "E", "F", "G", "H" ),
 	label_size = 13,
@@ -216,7 +285,8 @@ p <- plot_grid(
 )
 
 # save to disk
-save_plot( paste0( outdir, "/Figure_2.png" ), p, base_height = NULL, base_width = 14, base_asp = 1.4 )
+save_plot( paste0( outdir, "/FACET__Figure_2__ytitles.png" ), p, base_height = NULL, base_width = 14, base_asp = 1.4 )
+
 
 
 ###################################
@@ -227,18 +297,18 @@ p1 <- plot.facet( 'cont', all, 'all', 'All', 'RoB_allocation_prob', 'Allocation 
 p2 <- plot.facet( 'cont', all, 'all', 'All', 'RoB_random_prob', 'Randomization bias', outdir )
 p3 <- plot.facet( 'cont', all, 'all', 'All', 'RoB_blinding_pts_prob', 'Blinding of people bias', outdir )
 p4 <- plot.facet( 'cont', all, 'all', 'All', 'RoB_blinding_outcome_prob', 'Blinding of outcome bias', outdir )
-p5 <- plot.facet( 'bin', all, 'all', 'All', 'trial_registered', 'In database register (%)', outdir )
-p6 <- plot.facet( 'bin', all, 'all', 'All', 'consort_mentioned', 'With CONSORT statement (%)', outdir )
+p5 <- plot.facet( 'bin', all, 'all', 'All', 'trial_registered', 'RCT registration', outdir )
+p6 <- plot.facet( 'bin', all, 'all', 'All', 'consort_mentioned', 'CONSORT Statement', outdir )
 
 # arrange the three plots in a single row
 pcombined <- plot_grid(
 
-	p1 + theme( legend.position = "none", axis.title = element_blank() ),
-	p2 + theme( legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.ticks.y = element_blank() ),
-	p3 + theme( legend.position = "none", axis.title = element_blank() ),
-	p4 + theme( legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.ticks.y = element_blank() ),
-	p5 + theme( legend.position = "none", axis.title = element_blank() ),
-	p6 + theme( legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.ticks.y = element_blank() ),
+	p1 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Allocation bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+	p2 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Randomization bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+	p3 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Blinding of people bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+	p4 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Blinding of outcome bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+	p5 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " RCT registration (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+	p6 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " With CONSORT Statement (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
 
 	align = 'vh',
 	labels = c( "A", "B", "C", "D", "E", "F" ),
@@ -248,7 +318,8 @@ pcombined <- plot_grid(
 )
 
 # save
-save_plot( paste0( outdir, "/Suppl.Figure_2.png" ), pcombined, base_height = NULL, base_width = 6, base_asp = 0.5 )
+save_plot( paste0( outdir, "/FACET_all__ytitles.png" ), pcombined, base_height = NULL, base_width = 6, base_asp = 0.5 )
+
 
 
 ######################################
@@ -261,18 +332,18 @@ for( jif in c( 'impact_factor_cat3', 'impact_factor_cat5', 'impact_factor_cat10'
 	p2 <- plot.facet( 'cont', all, jif, 'Impact factor', 'RoB_random_prob', 'Randomization bias', outdir )
 	p3 <- plot.facet( 'cont', all, jif, 'Impact factor', 'RoB_blinding_pts_prob', 'Blinding of people bias', outdir )
 	p4 <- plot.facet( 'cont', all, jif, 'Impact factor', 'RoB_blinding_outcome_prob', 'Blinding of outcome bias', outdir )
-	p5 <- plot.facet( 'bin', all, jif, 'Impact factor', 'trial_registered', 'In database register (%)', outdir )
-	p6 <- plot.facet( 'bin', all, jif, 'Impact factor', 'consort_mentioned', 'With CONSORT statement (%)', outdir )
+	p5 <- plot.facet( 'bin', all, jif, 'Impact factor', 'trial_registered', 'RCT registration', outdir )
+	p6 <- plot.facet( 'bin', all, jif, 'Impact factor', 'consort_mentioned', 'CONSORT Statement', outdir )
 
 	# arrange the three plots in a single row
 	pcombined <- plot_grid(
 
-		p1 + theme( legend.position = "none", axis.title = element_blank() ),
-		p2 + theme( legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.ticks.y = element_blank() ),
-		p3 + theme( legend.position = "none", axis.title = element_blank() ),
-		p4 + theme( legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.ticks.y = element_blank() ),
-		p5 + theme( legend.position = "none", axis.title = element_blank() ),
-		p6 + theme( legend.position = "none", axis.title = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.ticks.y = element_blank() ),
+		p1 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Allocation bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+		p2 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Randomization bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+		p3 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Blinding of people bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+		p4 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " Blinding of outcome bias (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+		p5 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " RCT registration (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
+		p6 + theme( legend.position = "none", axis.title = element_blank() ) + annotate("text", -Inf, Inf, label = " With CONSORT Statement (%)", hjust = 0, vjust = 1, size = 4, fontface = 2, colour = 'gray40' ),
 
 		align = 'vh',
 		labels = c( "A", "B", "C", "D", "E", "F" ),
@@ -288,7 +359,7 @@ for( jif in c( 'impact_factor_cat3', 'impact_factor_cat5', 'impact_factor_cat10'
 	p <- plot_grid( pcombined, legend_b, ncol = 1, rel_heights = c(1, .05))
 
 	# save
-	save_plot( paste0( outdir, "/Suppl.Figure__", jif, ".png" ), p, base_height = NULL, base_width = 7, base_asp = 0.6 )
+	save_plot( paste0( outdir, "/FACET_", jif, ".png" ), p, base_height = NULL, base_width = 7, base_asp = 0.6 )
 }
 
 
